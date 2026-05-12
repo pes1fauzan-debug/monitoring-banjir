@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Monitoring Banjir — Sistem Deteksi Real-Time</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0a0e1a;
+      --surface: #111827;
+      --surface2: #1a2235;
+      --border: #1e2d45;
+      --text: #e2e8f0;
+      --muted: #64748b;
+      --accent: #38bdf8;
+
+      --aman: #22c55e;
+      --aman-glow: rgba(34,197,94,0.25);
+      --waspada: #eab308;
+      --waspada-glow: rgba(234,179,8,0.25);
+      --bahaya: #ef4444;
+      --bahaya-glow: rgba(239,68,68,0.3);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Syne', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ─── Background grid ─── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(56,189,248,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(56,189,248,0.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ─── Water animation bg ─── */
+    .wave-bg {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      height: 200px;
+      background: linear-gradient(180deg, transparent, rgba(56,189,248,0.04));
+      pointer-events: none;
+      z-index: 0;
+      overflow: hidden;
+    }
+    .wave-bg::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: -50%;
+      width: 200%;
+      height: 120px;
+      background: radial-gradient(ellipse at center, rgba(56,189,248,0.06) 0%, transparent 70%);
+      animation: waveMove 8s ease-in-out infinite alternate;
+    }
+    @keyframes waveMove {
+      from { transform: translateX(0); }
+      to { transform: translateX(20%); }
+    }
+
+    /* ─── Layout ─── */
+    .container {
+      position: relative;
+      z-index: 1;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 24px 16px 48px;
+    }
+
+    /* ─── Header ─── */
+    header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 32px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    .logo {
+      width: 48px; height: 48px;
+      background: linear-gradient(135deg, var(--accent), #0284c7);
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px;
+      flex-shrink: 0;
+      box-shadow: 0 0 20px rgba(56,189,248,0.3);
+    }
+    .header-text h1 {
+      font-size: 20px; font-weight: 800; line-height: 1.2;
+      letter-spacing: -0.5px;
+    }
+    .header-text p {
+      font-size: 12px; color: var(--muted);
+      font-family: 'Space Mono', monospace;
+      margin-top: 2px;
+    }
+    .live-badge {
+      margin-left: auto;
+      display: flex; align-items: center; gap: 6px;
+      background: rgba(34,197,94,0.1);
+      border: 1px solid rgba(34,197,94,0.3);
+      border-radius: 20px;
+      padding: 4px 12px;
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      color: var(--aman);
+      flex-shrink: 0;
+    }
+    .live-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--aman);
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%,100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.8); }
+    }
+
+    /* ─── Status Card ─── */
+    .status-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 28px;
+      margin-bottom: 20px;
+      position: relative;
+      overflow: hidden;
+      transition: border-color 0.5s, box-shadow 0.5s;
+    }
+    .status-card.aman   { border-color: var(--aman);    box-shadow: 0 0 40px var(--aman-glow); }
+    .status-card.waspada{ border-color: var(--waspada); box-shadow: 0 0 40px var(--waspada-glow); }
+    .status-card.bahaya { border-color: var(--bahaya);  box-shadow: 0 0 40px var(--bahaya-glow); }
+
+    .status-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+      background: var(--status-color, var(--accent));
+      transition: background 0.5s;
+    }
+    .status-card.aman::before    { background: var(--aman); }
+    .status-card.waspada::before { background: var(--waspada); }
+    .status-card.bahaya::before  { background: var(--bahaya); }
+
+    .status-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+    .status-label {
+      font-size: 11px;
+      font-family: 'Space Mono', monospace;
+      color: var(--muted);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+    .status-badge {
+      font-size: 13px; font-weight: 600;
+      padding: 5px 14px; border-radius: 20px;
+      font-family: 'Space Mono', monospace;
+      transition: all 0.4s;
+    }
+    .status-badge.aman    { background: var(--aman-glow);    color: var(--aman);    border: 1px solid var(--aman); }
+    .status-badge.waspada { background: var(--waspada-glow); color: var(--waspada); border: 1px solid var(--waspada); }
+    .status-badge.bahaya  {
+      background: var(--bahaya-glow);
+      color: var(--bahaya);
+      border: 1px solid var(--bahaya);
+      animation: flashBadge 0.8s ease-in-out infinite alternate;
+    }
+    @keyframes flashBadge {
+      from { opacity: 1; }
+      to   { opacity: 0.5; }
+    }
+
+    .level-display {
+      display: flex;
+      align-items: flex-end;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+    .level-number {
+      font-size: 72px;
+      font-weight: 800;
+      line-height: 1;
+      letter-spacing: -3px;
+      transition: color 0.5s;
+    }
+    .level-unit {
+      font-size: 18px;
+      color: var(--muted);
+      font-family: 'Space Mono', monospace;
+      margin-bottom: 8px;
+    }
+    .level-number.aman    { color: var(--aman); }
+    .level-number.waspada { color: var(--waspada); }
+    .level-number.bahaya  { color: var(--bahaya); }
+
+    /* Progress bar */
+    .progress-wrap {
+      background: var(--surface2);
+      border-radius: 8px;
+      height: 12px;
+      overflow: hidden;
+      position: relative;
+    }
+    .progress-zones {
+      position: absolute;
+      inset: 0;
+      display: flex;
+    }
+    .zone-aman    { width: 30%; background: rgba(34,197,94,0.15); }
+    .zone-waspada { width: 25%; background: rgba(234,179,8,0.15); }
+    .zone-bahaya  { flex: 1;   background: rgba(239,68,68,0.15); }
+    .progress-bar {
+      position: absolute;
+      top: 0; left: 0; bottom: 0;
+      border-radius: 8px;
+      transition: width 1s ease, background 0.5s;
+      background: var(--aman);
+    }
+    .progress-bar.waspada { background: var(--waspada); }
+    .progress-bar.bahaya  { background: var(--bahaya); }
+
+    .progress-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      font-family: 'Space Mono', monospace;
+      color: var(--muted);
+      margin-top: 6px;
+    }
+
+    .status-desc {
+      margin-top: 16px;
+      font-size: 14px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+    .status-desc span { color: var(--text); font-weight: 600; }
+
+    /* ─── Stats row ─── */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px;
+    }
+    .stat-card .label {
+      font-size: 10px;
+      font-family: 'Space Mono', monospace;
+      color: var(--muted);
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    .stat-card .value {
+      font-size: 20px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+    }
+    .stat-card .sub {
+      font-size: 11px;
+      color: var(--muted);
+      font-family: 'Space Mono', monospace;
+      margin-top: 2px;
+    }
+
+    /* ─── Chart ─── */
+    .chart-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 24px;
+      margin-bottom: 20px;
+    }
+    .chart-header {
+      display: flex; align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+    .chart-title {
+      font-size: 14px; font-weight: 600;
+    }
+    .chart-meta {
+      font-size: 11px; color: var(--muted);
+      font-family: 'Space Mono', monospace;
+    }
+    canvas {
+      width: 100% !important;
+      height: 180px !important;
+    }
+
+    /* ─── History list ─── */
+    .history-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 24px;
+      margin-bottom: 20px;
+    }
+    .history-title {
+      font-size: 14px; font-weight: 600;
+      margin-bottom: 16px;
+    }
+    .history-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+      font-family: 'Space Mono', monospace;
+      font-size: 12px;
+    }
+    .history-item:last-child { border-bottom: none; }
+    .h-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .h-dot.aman    { background: var(--aman); }
+    .h-dot.waspada { background: var(--waspada); }
+    .h-dot.bahaya  { background: var(--bahaya); }
+    .h-time { color: var(--muted); flex-shrink: 0; width: 70px; }
+    .h-level { color: var(--text); flex: 1; }
+    .h-status { flex-shrink: 0; }
+    .h-status.aman    { color: var(--aman); }
+    .h-status.waspada { color: var(--waspada); }
+    .h-status.bahaya  { color: var(--bahaya); }
+
+    /* ─── Footer ─── */
+    footer {
+      text-align: center;
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      color: var(--muted);
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+    }
+    footer a { color: var(--accent); text-decoration: none; }
+
+    /* ─── Loading state ─── */
+    .shimmer {
+      background: linear-gradient(90deg, var(--surface) 25%, var(--surface2) 50%, var(--surface) 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.5s infinite;
+      border-radius: 6px;
+    }
+    @keyframes shimmer {
+      from { background-position: 200% 0; }
+      to   { background-position: -200% 0; }
+    }
+
+    /* ─── Error ─── */
+    .error-msg {
+      background: rgba(239,68,68,0.1);
+      border: 1px solid rgba(239,68,68,0.3);
+      border-radius: 12px;
+      padding: 12px 16px;
+      font-size: 13px;
+      color: #fca5a5;
+      margin-bottom: 16px;
+      display: none;
+    }
+
+    @media (max-width: 480px) {
+      .level-number { font-size: 56px; }
+      .stats-row { grid-template-columns: 1fr 1fr; }
+      .stats-row .stat-card:last-child { grid-column: span 2; }
+    }
+  </style>
+</head>
+<body>
+<div class="wave-bg"></div>
+
+<div class="container">
+
+  <!-- Header -->
+  <header>
+    <div class="logo">🌊</div>
+    <div class="header-text">
+      <h1>Monitoring Banjir</h1>
+      <p>WEMOS D1 MINI · SENSOR AIR</p>
+    </div>
+    <div class="live-badge">
+      <div class="live-dot"></div>
+      LIVE
+    </div>
+  </header>
+
+  <!-- Error -->
+  <div class="error-msg" id="errorMsg">⚠️ Gagal mengambil data dari ThingSpeak. Cek koneksi internet atau API key.</div>
+
+  <!-- Status Card -->
+  <div class="status-card" id="statusCard">
+    <div class="status-top">
+      <div class="status-label">STATUS SAAT INI</div>
+      <div class="status-badge" id="statusBadge">— MEMUAT —</div>
+    </div>
+    <div class="level-display">
+      <div class="level-number" id="levelNumber">—</div>
+      <div class="level-unit">/ 1023</div>
+    </div>
+    <div class="progress-wrap">
+      <div class="progress-zones">
+        <div class="zone-aman"></div>
+        <div class="zone-waspada"></div>
+        <div class="zone-bahaya"></div>
+      </div>
+      <div class="progress-bar" id="progressBar" style="width:0%"></div>
+    </div>
+    <div class="progress-labels">
+      <span>0</span>
+      <span>AMAN &lt;300</span>
+      <span>WASPADA &lt;550</span>
+      <span>BAHAYA</span>
+      <span>1023</span>
+    </div>
+    <div class="status-desc" id="statusDesc">Mengambil data dari sensor...</div>
+  </div>
+
+  <!-- Stats Row -->
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="label">MAKS HARI INI</div>
+      <div class="value" id="statMax">—</div>
+      <div class="sub">nilai tertinggi</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">MIN HARI INI</div>
+      <div class="value" id="statMin">—</div>
+      <div class="sub">nilai terendah</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">DIPERBARUI</div>
+      <div class="value" id="statTime" style="font-size:15px">—</div>
+      <div class="sub" id="statAgo">auto-refresh 30s</div>
+    </div>
+  </div>
+
+  <!-- Chart -->
+  <div class="chart-card">
+    <div class="chart-header">
+      <div class="chart-title">📈 Grafik Level Air</div>
+      <div class="chart-meta" id="chartMeta">20 data terakhir</div>
+    </div>
+    <canvas id="myChart"></canvas>
+  </div>
+
+  <!-- History -->
+  <div class="history-card">
+    <div class="history-title">🕓 Riwayat Pembacaan</div>
+    <div id="historyList">
+      <div style="color:var(--muted);font-size:13px;font-family:'Space Mono',monospace">Memuat riwayat...</div>
+    </div>
+  </div>
+
+  <footer>
+    Sumber data: <a href="https://thingspeak.com" target="_blank">ThingSpeak</a> ·
+    Dibuat untuk Sistem Monitoring Banjir Wemos D1 Mini ·
+    <span id="footerTime"></span>
+  </footer>
+
+</div>
+
+<!-- Chart.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script>
+  // ╔══════════════════════════════════════╗
+  // ║  GANTI INI DENGAN API KEY KAMU      ║
+  const TS_CHANNEL = "2983285";          // Channel ID ThingSpeak kamu
+  const TS_READ_KEY = "J3EQQMFYD1UHGBTC"; // Read API Key ThingSpeak
+  // ╚══════════════════════════════════════╝
+
+  const API_URL = `https://api.thingspeak.com/channels/${TS_CHANNEL}/fields/1.json?api_key=${TS_READ_KEY}&results=20`;
+
+  let chartInstance = null;
+  let allData = [];
+
+  function getStatus(val) {
+    if (val < 300) return { cls: 'aman',    label: '✅ AMAN',    desc: 'Ketinggian air <span>normal</span>. Tidak ada ancaman banjir.' };
+    if (val < 550) return { cls: 'waspada', label: '⚠️ WASPADA', desc: 'Permukaan air <span>mulai meningkat</span>. Harap waspada dan pantau terus.' };
+    return               { cls: 'bahaya',  label: '🚨 BAHAYA',  desc: 'Air <span>melebihi batas aman!</span> Segera lakukan pengecekan lokasi.' };
+  }
+
+  function updateUI(feeds) {
+    const latest = feeds[feeds.length - 1];
+    const val = parseInt(latest.field1) || 0;
+    const st = getStatus(val);
+
+    const values = feeds.map(f => parseInt(f.field1) || 0);
+    const maxV = Math.max(...values);
+    const minV = Math.min(...values);
+
+    // Status card
+    const card = document.getElementById('statusCard');
+    card.className = `status-card ${st.cls}`;
+    document.getElementById('statusBadge').textContent = st.label;
+    document.getElementById('statusBadge').className = `status-badge ${st.cls}`;
+    document.getElementById('statusDesc').innerHTML = st.desc;
+
+    // Number
+    const numEl = document.getElementById('levelNumber');
+    numEl.className = `level-number ${st.cls}`;
+    animateNumber(numEl, parseInt(numEl.dataset.val || 0), val, 800);
+    numEl.dataset.val = val;
+
+    // Progress
+    const pct = Math.min(100, (val / 1023) * 100);
+    const bar = document.getElementById('progressBar');
+    bar.style.width = pct + '%';
+    bar.className = `progress-bar ${st.cls}`;
+
+    // Stats
+    document.getElementById('statMax').textContent = maxV;
+    document.getElementById('statMin').textContent = minV;
+
+    const t = new Date(latest.created_at);
+    const timeStr = t.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    document.getElementById('statTime').textContent = timeStr;
+
+    const now = new Date();
+    const diffS = Math.round((now - t) / 1000);
+    document.getElementById('statAgo').textContent = diffS < 60 ? `${diffS}d lalu` : `${Math.round(diffS/60)}m lalu`;
+
+    document.getElementById('footerTime').textContent = 'Update: ' + now.toLocaleString('id-ID');
+
+    // Chart
+    const labels = feeds.map(f => {
+      const d = new Date(f.created_at);
+      return d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+    });
+    drawChart(labels, values, st.cls);
+
+    // History
+    drawHistory(feeds.slice().reverse());
+  }
+
+  function animateNumber(el, from, to, dur) {
+    const start = performance.now();
+    const update = (now) => {
+      const p = Math.min(1, (now - start) / dur);
+      const eased = 1 - Math.pow(1 - p, 3);
+      el.textContent = Math.round(from + (to - from) * eased);
+      if (p < 1) requestAnimationFrame(update);
+    };
+    requestAnimationFrame(update);
+  }
+
+  function getChartColor(cls) {
+    if (cls === 'aman')    return { line: '#22c55e', fill: 'rgba(34,197,94,0.15)' };
+    if (cls === 'waspada') return { line: '#eab308', fill: 'rgba(234,179,8,0.15)' };
+    return                        { line: '#ef4444', fill: 'rgba(239,68,68,0.15)' };
+  }
+
+  function drawChart(labels, values, cls) {
+    const col = getChartColor(cls);
+    const ctx = document.getElementById('myChart').getContext('2d');
+
+    if (chartInstance) {
+      chartInstance.data.labels = labels;
+      chartInstance.data.datasets[0].data = values;
+      chartInstance.data.datasets[0].borderColor = col.line;
+      chartInstance.data.datasets[0].backgroundColor = col.fill;
+      chartInstance.data.datasets[0].pointBackgroundColor = col.line;
+      chartInstance.update('active');
+      return;
+    }
+
+    chartInstance = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Level Air',
+          data: values,
+          borderColor: col.line,
+          backgroundColor: col.fill,
+          borderWidth: 2,
+          pointBackgroundColor: col.line,
+          pointRadius: 3,
+          pointHoverRadius: 6,
+          tension: 0.4,
+          fill: true,
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#1a2235',
+            borderColor: '#1e2d45',
+            borderWidth: 1,
+            titleColor: '#e2e8f0',
+            bodyColor: '#94a3b8',
+            callbacks: {
+              label: ctx => `Level: ${ctx.parsed.y}`
+            }
+          }
+        },
+        scales: {
+          x: {
+            grid: { color: 'rgba(255,255,255,0.04)' },
+            ticks: { color: '#64748b', font: { family: "'Space Mono'" }, maxRotation: 0, maxTicksLimit: 6 }
+          },
+          y: {
+            min: 0, max: 1023,
+            grid: { color: 'rgba(255,255,255,0.04)' },
+            ticks: { color: '#64748b', font: { family: "'Space Mono'" } }
+          }
+        }
+      }
+    });
+  }
+
+  function drawHistory(feeds) {
+    const container = document.getElementById('historyList');
+    container.innerHTML = feeds.slice(0, 8).map(f => {
+      const val = parseInt(f.field1) || 0;
+      const st = getStatus(val);
+      const t = new Date(f.created_at);
+      const timeStr = t.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      return `
+        <div class="history-item">
+          <div class="h-dot ${st.cls}"></div>
+          <div class="h-time">${timeStr}</div>
+          <div class="h-level">Level: <strong>${val}</strong></div>
+          <div class="h-status ${st.cls}">${st.cls.toUpperCase()}</div>
+        </div>`;
+    }).join('');
+  }
+
+  async function fetchData() {
+    try {
+      document.getElementById('errorMsg').style.display = 'none';
+      const res = await fetch(API_URL);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const json = await res.json();
+      if (json.feeds && json.feeds.length > 0) {
+        updateUI(json.feeds);
+      }
+    } catch (e) {
+      console.error(e);
+      document.getElementById('errorMsg').style.display = 'block';
+    }
+  }
+
+  // Init
+  fetchData();
+  setInterval(fetchData, 30000); // refresh tiap 30 detik
+</script>
+</body>
+</html>
